@@ -23,7 +23,7 @@ def get_all_items_in_collection(collection, include_last_match):
     if include_last_match == True:
         return list(collection.find({},{"_id" : 0 }))
     else:
-        return list(collection.find({},{"_id" : 0, "last_match": 0, "alert": 0}))
+        return list(collection.find({},{"_id" : 0, "last_match": 0, "alert": 0, "alerted_listings": 0}))
         
 def insert_item(collection, item):
     collection.insert_one(item)
@@ -38,7 +38,7 @@ def update_item(collection, item_id, new_name, new_price):
     }
     collection.update_one(query, new_value)
 
-def update_last_match(collection, item_id, item_last_match, total_result):
+def update_last_match(collection, item_id, item_last_match, total_result, last_alert_price=None, alerted_listings=None):
     query = { "id": f"{item_id}" }
     new_value = { 
         "$set": {
@@ -46,6 +46,14 @@ def update_last_match(collection, item_id, item_last_match, total_result):
              "total_result": f"{total_result}",
         } 
     }
+
+    # Only touch the alert bookkeeping when the caller provides it,
+    # so a failed API call cannot wipe the alerted history
+    if last_alert_price is not None:
+        new_value["$set"]["last_alert_price"] = f"{last_alert_price}"
+    if alerted_listings is not None:
+        new_value["$set"]["alerted_listings"] = [f"{listing_id}" for listing_id in alerted_listings]
+
     collection.update_one(query, new_value)
 
 def delete_item(collection, item_id):

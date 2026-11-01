@@ -1,4 +1,4 @@
 requests
 pymongo
-load_dotenv
+python-dotenv
 discord.py[voice]

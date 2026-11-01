@@ -11,6 +11,24 @@ When an item is posted on Auction House and matches our criteria:
 
 <img src="./repo_media/alert-match.png" width=70% height=70% />
 
+## Alert rules
+
+Each Auction House **listing** is alerted at most once, and all listings found in one polling
+cycle are collapsed into a **single embed** (max 1 message per watched item per cycle). Alerting
+is driven by `listingId` (tracked in the `alerted_listings` field in MongoDB) and `last_alert_price`
+records the cheapest price alerted so far:
+
+| Situation | Result |
+| --- | --- |
+| Cheap listing stays visible across many polling cycles | Alert once |
+| A new listing appears at the same low price | Alerts again (it is a separate `listingId`) |
+| New listing priced at or above the watch price | No alert |
+| 7 new listings appear at once | One embed, not 7 messages |
+
+The embed shows the headline cheapest price plus a collapsed price summary (`1 x3, 5, 95, 5,000 x2`)
+of the new listings **and** of every other listing still in the query window. The number of price
+levels shown is set by `AH_ALERT_SUMMARY_SIZE` (default 5).
+
 
 # How to use
 
@@ -80,6 +98,8 @@ DISCORD_API_TOKEN         = ""
 DISCORD_SERVER_ID         = ""
 DISCORD_CHANNEL_ID        = ""
 MONGODB_CONNECTION_STRING = ""
+AH_ALERT_INTERVAL         = "5"   # optional: polling interval in seconds (default 5)
+AH_ALERT_SUMMARY_SIZE     = "5"   # optional: price levels shown in the alert summary (default 5)
 ```
  - `DISCORD_API_TOKEN` is generated from step 8 of [Creating and Inviting a Private Discord Bot](#creating-and-inviting-a-private-discord-bot) Section
  - `DISCORD_SERVER_ID` can be found by right click your server where you add the bot and click `Copy Server ID`
@@ -102,6 +122,8 @@ DISCORD_API_TOKEN         = ""
 DISCORD_SERVER_ID         = ""
 DISCORD_CHANNEL_ID        = ""
 MONGODB_CONNECTION_STRING = ""
+AH_ALERT_INTERVAL         = "5"   # optional: polling interval in seconds (default 5)
+AH_ALERT_SUMMARY_SIZE     = "5"   # optional: price levels shown in the alert summary (default 5)
 ```
  - `DISCORD_API_TOKEN` is generated from step 8 of [Creating and Inviting a Private Discord Bot](#creating-and-inviting-a-private-discord-bot) Section
  - `DISCORD_SERVER_ID` can be found by right click your server where you add the bot and click `Copy Server ID`
@@ -124,6 +146,8 @@ env:
   DISCORD_SERVER_ID         = ""
   DISCORD_CHANNEL_ID        = ""
   MONGODB_CONNECTION_STRING = ""
+  AH_ALERT_INTERVAL         = "5"   # optional: polling interval in seconds (default 5)
+  AH_ALERT_SUMMARY_SIZE     = "5"   # optional: price levels shown in the alert summary (default 5)
 ```
  - `DISCORD_API_TOKEN` is generated from step 8 of [Creating and Inviting a Private Discord Bot](#creating-and-inviting-a-private-discord-bot) Section
  - `DISCORD_SERVER_ID` can be found by right click your server where you add the bot and click `Copy Server ID`
