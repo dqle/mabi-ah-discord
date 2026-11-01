@@ -62,11 +62,14 @@ Create the name of the service account to use
 {{- end }}
 
 {{- define "helpers.list-env-variables"}}
+{{- $root := . }}
 {{- range $key, $val := .Values.env }}
+{{- if $val }}
 - name: {{ $key }}
   valueFrom:
     secretKeyRef:
-      name: mabi-ah-discord
+      name: {{ include "mabi-ah-discord.fullname" $root }}
       key: {{ $key }}
+{{- end }}
 {{- end }}
 {{- end }}

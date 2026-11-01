@@ -1,0 +1,24 @@
+Chart: {{ .Chart.Name }}-{{ .Chart.Version }} (app {{ .Chart.AppVersion }})
+Release: {{ .Release.Name }} in namespace {{ .Release.Namespace }}
+
+Watchlist commands (in the Discord channel the bot is in):
+
+  /ah_list       show every watched item, its target price and last alert price
+  /ah_add_item   open the Add Item modal
+  /ah_edit_item  open the Edit Item modal for one item id
+  /ah_delete_item remove an item from the watchlist
+
+The PostgreSQL server runs inside the bot's own container (env.POSTGRES_CONNECTION_STRING,
+default postgresql://mabi_ah@127.0.0.1:5432/mabi_ah). The watchlist is
+stored on {{ if .Values.persistence.enabled }}the persistent volume claim
+{{ include "mabi-ah-discord.fullname" . }}-db mounted at /data, so it survives pod
+restarts{{ else }}an emptyDir, so it is wiped on every pod start{{ end }}.
+
+The bot needs outbound HTTPS to api.na.mabibase.com and outbound TLS to Discord.
+If you point env.POSTGRES_CONNECTION_STRING at an external cluster, that host and port
+must be reachable from the pod.
+
+Verify with:
+
+  kubectl -n {{ .Release.Namespace }} logs deployment/{{ include "mabi-ah-discord.fullname" . }} --tail=30
+  kubectl -n {{ .Release.Namespace }} exec deployment/{{ include "mabi-ah-discord.fullname" . }} -- /healthcheck.sh

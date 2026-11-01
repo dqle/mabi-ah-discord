@@ -1,4 +1,4 @@
 requests
-pymongo
+psycopg[binary]
 python-dotenv
 discord.py[voice]

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "mabi-ah-discord chart values",
+  "type": "object",
+  "required": ["env"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "description": "The bot opens one Discord gateway connection, a polling loop and a local PostgreSQL data directory; extra replicas duplicate alerts and fight over the volume."
+    },
+    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 10 },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "size": { "type": ["string", "integer"] },
+        "storageClassName": { "type": ["string", "null"] },
+        "accessModes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "probes": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "liveness": { "type": "object" },
+        "readiness": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "env": {
+      "type": "object",
+      "required": [
+        "DISCORD_API_TOKEN",
+        "DISCORD_SERVER_ID",
+        "DISCORD_CHANNEL_ID",
+        "POSTGRES_CONNECTION_STRING"
+      ],
+      "properties": {
+        "DISCORD_API_TOKEN": { "type": "string", "minLength": 1 },
+        "DISCORD_SERVER_ID": { "type": ["string", "integer"], "pattern": "^[0-9]+$" },
+        "DISCORD_CHANNEL_ID": { "type": ["string", "integer"], "pattern": "^[0-9]+$" },
+        "POSTGRES_CONNECTION_STRING": { "type": "string", "pattern": "^postgresql://" },
+        "POSTGRES_CONNECT_TIMEOUT_S": { "type": ["string", "integer"] },
+        "AH_ALERT_INTERVAL": { "type": ["string", "integer"] },
+        "AH_ALERT_SUMMARY_SIZE": { "type": ["string", "integer"] }
+      },
+      "additionalProperties": { "type": ["string", "integer"] }
+    },
+    "extraEnv": { "type": "array" }
+  },
+  "additionalProperties": true
+}

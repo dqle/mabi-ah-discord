@@ -4,11 +4,10 @@ import json
 import time
 from collections import Counter
 from discord.ext import commands, tasks
-from mongodb_ah import *
+import database
 from query_mabi_base import *
 
 logger = settings.logging.getLogger("bot")
-collection = get_collection()
 
 #-----------------------------------------
 # Class:       AddItemModal
@@ -21,22 +20,27 @@ class AddItemModal(discord.ui.Modal, title="Add Item"):
     item_price = discord.ui.TextInput(label="Item Price", required=True, max_length=100, style=discord.TextStyle.short)
 
     async def on_submit(self, interaction: discord.Interaction):
+        item_price = parse_price(self.item_price.value)
+        if item_price is None:
+            await interaction.response.send_message(
+                f"Item price must be a number (got `{self.item_price}`).", ephemeral=True
+            )
+            return
+
         # Seed a one-interval lookback so the baseline total only counts the listings
         # that the alert loop will query on its first run (no duplicate alerts)
         current_time = int(time.time()) - settings.AH_ALERT_INTERVAL
-        auction_house = query_item_from_mabi_base(self.item_id, current_time)
-        total_result = auction_house['total']
-        item = {
-            "name": f"{self.item_name}",
-            "id": f"{self.item_id}",
-            "price": f"{self.item_price}",
-            "last_match": f"{current_time}",
-            "total_result": f"{total_result}",
-            "last_alert_price": "",       # price of the most recent alert (empty = never alerted)
-            "alerted_listings": []        # listing ids already alerted for this watched item
-        }
-        insert_item(collection, item)
-        await interaction.response.send_message(f"Added: `{self.item_name}` (ID: `{self.item_id}`) at `{self.item_price}` by {interaction.user.mention}")
+        auction_house = query_item_from_mabi_base(int(self.item_id), current_time)
+        total_result  = auction_house['total']
+
+        database.insert_item(
+            item_id      = int(self.item_id),
+            name         = self.item_name,
+            price        = item_price,
+            last_match   = current_time,
+            total_result = total_result,
+        )
+        await interaction.response.send_message(f"Added: `{self.item_name}` (ID: `{self.item_id}`) at `{item_price:,}` by {interaction.user.mention}")
         
     async def on_error(self, interaction: discord.Interaction, error):
         await interaction.response.send_message(f"An error occurred: {error}", ephemeral=True)
@@ -57,14 +61,14 @@ class EditItemModal(discord.ui.Modal):
 
         self.new_item_name = discord.ui.TextInput(
             label="Item Name",
-            default=item_name,
+            default=str(item_name),
             required=False,
             max_length=100,
             style=discord.TextStyle.short
         )
         self.new_item_price = discord.ui.TextInput(
             label="Item Price",
-            default=item_price,
+            default=f"{int(item_price):,}",   # the column stores an int, the modal shows "1,500"
             required=True,
             max_length=100,
             style=discord.TextStyle.short
@@ -76,13 +80,19 @@ class EditItemModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         original_item_name_value  = self.original_item_name_value
         original_item_price_value = self.original_item_price_value
-        new_item_name_value       = self.new_item_name.value
-        new_item_price_value      = self.new_item_price.value
-        item_id_value             = self.item_id_value
+        new_item_name_value  = self.new_item_name.value
+        item_id_value        = self.item_id_value
+        new_item_price_value = parse_price(self.new_item_price.value)
 
-        update_item(collection, item_id_value, new_item_name_value, new_item_price_value)
+        if new_item_price_value is None:
+            await interaction.response.send_message(
+                f"Item price must be a number (got `{self.new_item_price.value}`).", ephemeral=True
+            )
+            return
 
-        await interaction.response.send_message(f"Edited: `{original_item_name_value}` -> `{new_item_name_value}` (ID: `{item_id_value}`) from `{original_item_price_value}` -> `{new_item_price_value}` by {interaction.user.mention}")
+        database.update_item(item_id_value, new_item_name_value, new_item_price_value)
+
+        await interaction.response.send_message(f"Edited: `{original_item_name_value}` -> `{new_item_name_value}` (ID: `{item_id_value}`) from `{original_item_price_value:,}` -> `{new_item_price_value:,}` by {interaction.user.mention}")
         
     async def on_error(self, interaction: discord.Interaction, error):
         await interaction.response.send_message(f"An error occurred: {error}", ephemeral=True)
@@ -91,11 +101,13 @@ class EditItemModal(discord.ui.Modal):
 #-----------------------------------------
 # Function: parse_price()
 # Description:
-#   Mongo stores prices as strings that may contain commas ("1,500")
-#   and empty strings for "not set yet".
+#   Prices are stored as BIGINT in PostgreSQL, but the modal inputs are free
+#   text that users type with thousands separators ("1,500"). Turn that into
+#   an int, and treat empty/blank as "not set" (None).
 #-----------------------------------------
 
 def parse_price(value):
+    """Turn a price the user typed into an int; empty/blank means "not set"."""
     if value is None:
         return None
     cleaned = str(value).replace(",", "").strip()
@@ -173,8 +185,8 @@ def discord_run():
     
     @bot.tree.command()
     async def ah_list(interaction: discord.Interaction):
-        ah_list = get_all_items_in_collection(get_collection(), False)
-        await interaction.response.send_message("Currently Watching: ```{}```".format(json.dumps(ah_list, indent=2)))
+        ah_list = database.get_watchlist()
+        await interaction.response.send_message("Currently Watching: ```{}```".format(json.dumps(ah_list, indent=2, default=str)))
 
     @bot.tree.command()
     async def ah_add_item(interaction: discord.Interaction):
@@ -182,26 +194,32 @@ def discord_run():
 
     @bot.tree.command()
     async def ah_edit_item(interaction: discord.Interaction, item_id: int):
-        item = find_item_by_id(item_id, collection)
+        item = database.find_item_by_id(item_id)
+        if not item:
+            await interaction.response.send_message(f"No watched item with ID `{item_id}`.", ephemeral=True)
+            return
         await interaction.response.send_modal(EditItemModal(item['name'], item['id'], item['price']))
 
     @bot.tree.command()
     async def ah_delete_item(interaction: discord.Interaction, item_id: int):
-        item = find_item_by_id(item_id, collection)
-        delete_item(collection, item_id)
+        item = database.find_item_by_id(item_id)
+        if not item:
+            await interaction.response.send_message(f"No watched item with ID `{item_id}`.", ephemeral=True)
+            return
+        database.delete_item(item_id)
         await interaction.response.send_message(f"Delete Item: {item['name']} ({item_id}) by {interaction.user.mention}")
 
     @tasks.loop(seconds=settings.AH_ALERT_INTERVAL)
     async def ah_alert_channel():
-      item_list = get_all_items_in_collection(collection, True)
+      item_list = database.get_watched_items()
       for item in item_list:
           current_time      = int(time.time())
           item_name         = item["name"]
-          item_id           = item["id"]
+          item_id           = str(item["id"])
           item_price        = parse_price(item["price"])
           item_last_match   = int(item["last_match"]) if item.get("last_match") else current_time - settings.AH_ALERT_INTERVAL
           last_alert_price  = parse_price(item.get("last_alert_price"))
-          alerted_listings  = {str(listing_id) for listing_id in item.get("alerted_listings", [])}
+          alerted_listings  = {str(listing_id) for listing_id in (item.get("alerted_listings") or [])}
 
           try:
               auction_house    = query_item_from_mabi_base(item_id, item_last_match)
@@ -243,10 +261,16 @@ def discord_run():
                               f"at {format_price_summary(sorted(new_prices))} (watch {item_price:,})")
 
               #Update the last_match time to the current time and new total result
-              update_last_match(collection, item_id, current_time, new_total_result, last_alert_price, alerted_listings)
+              database.update_last_match(item_id, current_time, new_total_result, last_alert_price, alerted_listings)
           except Exception as error:
               # Keep watching the same window: last_match/total_result are left untouched
               logger.error(f"Alert loop skipped {item_name} (ID: {item_id}): {error}")
+              # A dead database connection is not an API problem: reconnect so the
+              # next item in the list is not skipped for the same stale connection
+              try:
+                  database.connect(reopen=True)
+              except Exception as db_error:
+                  logger.error(f"Database reconnect failed: {db_error}")
 
 
     bot.run(settings.DISCORD_API_TOKEN, root_logger = True)

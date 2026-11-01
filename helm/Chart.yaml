@@ -1,8 +1,16 @@
 apiVersion: v2
 name: mabi-ah-discord
-appVersion: "1.0.1"
-version: 1.0.0
+# The database is PostgreSQL now, which is not backward compatible with the
+# MongoDB releases, and the data volume mount moved from /data/db to /data.
+appVersion: "1.1.0"
+version: 1.2.0
 description: A Helm chart for Mabi-AH-Discord
 home: https://github.com/dqle/mabi-ah-discord
+keywords:
+- mabinogi
+- auction-house
+- discord
+- discord-bot
+- postgresql
 maintainers:
 - name: Duc Le

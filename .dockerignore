@@ -1,3 +1,7 @@
 .env
 docker-compose.yaml
+docker-compose.yml
 repo_media/
+__pycache__
+.git
+helm

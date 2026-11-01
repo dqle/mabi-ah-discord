@@ -1,6 +1,27 @@
 services:
+  # The bot and its PostgreSQL server ship in one image: the container runs
+  # initdb on first start, launches a local postgres on 127.0.0.1:5432 and then
+  # runs the bot, which talks to it over the loopback interface. No database
+  # service, no cloud Postgres.
   mabi-ah-discord:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: dqle/mabi-ah-discord:latest
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      POSTGRES_CONNECTION_STRING: postgresql://mabi_ah@127.0.0.1:5432/mabi_ah
+    volumes:
+      # Keeps the watchlist (and the alert bookkeeping) across restarts.
+      - mabi-ah-db:/data
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  mabi-ah-db:

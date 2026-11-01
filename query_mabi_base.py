@@ -8,7 +8,7 @@ PAGE_SIZE              = 25   # must match the persisted query's pagination.page
 # Function: to_mabi_timestamp()
 # Description:
 #   MabiBase compares the `ListedAfter` filter against epoch MILLISECONDS,
-#   while this bot stores epoch seconds in Mongo. Sending seconds (e.g.
+#   while this bot stores epoch seconds in PostgreSQL. Sending seconds (e.g.
 #   1793567684) makes the filter point at Jan 1970, so every current
 #   listing matches and new listings are never detected.
 #-----------------------------------------
@@ -54,7 +54,7 @@ def craft_request_body(item_id, item_last_match_ms):
 # Function: query_item_from_mabi_base()
 # Description:
 #   Returns the parsed `auctionHouse` object ({total, results}) for an item.
-#   `item_last_match` is the epoch-seconds value stored in Mongo.
+#   `item_last_match` is the epoch-seconds value stored in ah_items.
 #-----------------------------------------
 
 def query_item_from_mabi_base(item_id, item_last_match):

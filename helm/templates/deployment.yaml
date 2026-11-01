@@ -1,11 +1,18 @@
-apiVersion: apps/v1
+apiVersion: v1
 kind: Deployment
+{{- /* Fail fast on missing credentials instead of rendering a Secret with empty keys */}}
+{{- $required := list "DISCORD_API_TOKEN" "DISCORD_SERVER_ID" "DISCORD_CHANNEL_ID" }}
+{{- range $key := $required }}
+{{- $_ := required (printf "env.%s is a required value" $key) (index $.Values.env $key) }}
+{{- end }}
 metadata:
   name: {{ include "mabi-ah-discord.fullname" . }}
   labels:
     {{- include "mabi-ah-discord.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
   selector:
     matchLabels:
       {{- include "mabi-ah-discord.selectorLabels" . | nindent 6 }}
@@ -25,6 +32,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -33,5 +41,45 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           env:
-            {{- include "helpers.list-env-variables" . | indent 12 }}
+            {{- include "helpers.list-env-variables" . | nindent 12 }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.probes.enabled }}
+          livenessProbe:
+            exec:
+              command: ["/healthcheck.sh"]
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["/healthcheck.sh"]
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            # postgres' data directory: the cluster (PGDATA=/data/pgdata) and the
+            # watchlist live here
+            - name: mabi-ah-db
+              mountPath: /data
+      volumes:
+        - name: mabi-ah-db
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mabi-ah-discord.fullname" . }}-db
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

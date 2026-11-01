@@ -4,7 +4,6 @@
 
 image:
   repository: dqle/mabi-ah-discord
-  tag: latest
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -13,8 +12,91 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+replicaCount: 1
+
+# The bot is a single Discord gateway connection with a polling loop, and it
+# owns a single local PostgreSQL data directory. More than one replica would
+# duplicate alerts and fight over the volume, so keep this at 1.
+strategy:
+  type: Recreate
+
+# postgres + the bot are shut down with SIGTERM by the entrypoint, which lets
+# the server run its shutdown checkpoint; give it room to finish.
+terminationGracePeriodSeconds: 60
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# The PostgreSQL server runs inside the bot's own container, on the loopback
+# interface. This claim is mounted at /data and holds the cluster
+# (/data/pgdata), so the watchlist survives pod restarts. With persistence
+# disabled the database is ephemeral: initdb runs again on every pod start and
+# the watchlist starts empty (useful for a throwaway install, nothing else).
+persistence:
+  enabled: true
+  size: 1Gi
+  # storageClassName: standard
+  accessModes:
+    - ReadWriteOnce
+
+# Liveness/readiness exec the container's /healthcheck.sh, which runs a query
+# against the local database: a pod whose database is gone stops serving.
+probes:
+  enabled: true
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 15
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+# All bot configuration is delivered as environment variables through a
+# Secret. These three are required; the render fails if any of them is empty.
+# POSTGRES_CONNECTION_STRING may point at the in-container server (the default
+# below, port 5432) or at any other PostgreSQL the pod can reach, e.g.
+# postgresql://user:password@host:5432/mabi_ah
 env:
   DISCORD_API_TOKEN: ""
   DISCORD_SERVER_ID: ""
   DISCORD_CHANNEL_ID: ""
-  MONGODB_CONNECTION_STRING: ""
+  POSTGRES_CONNECTION_STRING: "postgresql://mabi_ah@127.0.0.1:5432/mabi_ah"
+  # Optional tuning knobs (see README), empty means use the chart defaults.
+  AH_ALERT_INTERVAL: ""
+  AH_ALERT_SUMMARY_SIZE: ""
+
+# Extra environment variables that are not secrets, e.g. proxy settings or the
+# in-container server's tuning knobs (PG_SHARED_BUFFERS, PG_WORK_MEM, ...).
+extraEnv: []
+# - name: TZ
+#   value: America/Los_Angeles
+# - name: PG_SHARED_BUFFERS
+#   value: "128MB"

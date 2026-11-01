@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "mabi-ah-discord.fullname" . }}-test
+  labels:
+    {{- include "mabi-ah-discord.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+    # Checks the two things the bot cannot work without: the MabiBase API and the
+    # PostgreSQL database. Only `args` is set, so the image entrypoint runs first:
+    # it starts the in-container postgres (the default target of
+    # env.POSTGRES_CONNECTION_STRING) and then runs this check.
+    - name: connectivity
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      workingDir: /opt/app
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      args:
+        - python3
+        - -c
+        - |
+          import os, requests, psycopg
+          import database   # /opt/app is the container working directory
+
+          url = "https://api.na.mabibase.com/graphql?t=1"
+          body = [{"operationName": "auctionHouseSearch",
+                   "variables": {"server": "mabius6", "filters": [],
+                                 "pagination": {"pageSize": 1, "pageIndex": 0},
+                                 "sort": {"attribute": "ItemPrice", "direction": "Ascending"}},
+                   "extensions": {"persistedQuery": {"version": 1,
+                   "sha256Hash": "e42f50b9ab00b0e7b820afbaae91c07722178ed6b0d3aa3b578c8cc4edfe3a84"}}}]
+          r = requests.post(url, json=body, timeout=15)
+          r.raise_for_status()
+          total = r.json()[0]["data"]["auctionHouse"]["total"]
+          print("MabiBase reachable, listings in window:", total)
+
+          conn = os.environ["POSTGRES_CONNECTION_STRING"]
+          with psycopg.connect(conn, connect_timeout=15) as db:
+              row = db.execute("SELECT current_database(), current_user").fetchone()
+              print("PostgreSQL reachable, database/user:", row[0], row[1])
+              db.execute(database.SCHEMA)   # idempotent: guarantees the table exists
+              count = db.execute("SELECT count(*) FROM ah_items").fetchone()[0]
+              print("watchlist rows:", count)
+      env:
+        {{- include "helpers.list-env-variables" . | nindent 8 }}
